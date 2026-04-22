@@ -1,0 +1,78 @@
+---
+# Gather diagnostics from the affected host before sending to RCA LLM.
+# Collects CPU, memory, disk, running services, and recent logs.
+# Output variables passed via set_stats to playbook 03_rca_analysis.yml
+
+- name: Gather diagnostic data from affected host
+  hosts: "{{ target_host | default('all') }}"
+  gather_facts: true
+  become: true
+
+  vars:
+    log_lines: "{{ log_tail_lines | default(50) }}"
+    top_process_count: "{{ top_n_processes | default(10) }}"
+
+  tasks:
+    - name: Capture top CPU-consuming processes
+      ansible.builtin.command:
+        cmd: "ps aux --sort=-%cpu | head -{{ top_process_count + 1 }}"
+      register: top_cpu_output
+      changed_when: false
+
+    - name: Capture memory utilization
+      ansible.builtin.command:
+        cmd: free -h
+      register: memory_output
+      changed_when: false
+
+    - name: Capture disk utilization
+      ansible.builtin.command:
+        cmd: df -h
+      register: disk_output
+      changed_when: false
+
+    - name: Capture last {{ log_lines }} lines of syslog
+      ansible.builtin.command:
+        cmd: "journalctl -n {{ log_lines }} --no-pager -o short-iso"
+      register: syslog_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Check status of key services
+      ansible.builtin.service_facts:
+
+    - name: Filter relevant service statuses
+      ansible.builtin.set_fact:
+        relevant_services: >-
+          {{
+            ansible_facts.services | dict2items
+            | selectattr('value.state', 'defined')
+            | selectattr('value.state', '!=', 'running')
+            | list
+          }}
+
+    - name: Build diagnostic summary
+      ansible.builtin.set_fact:
+        host_diagnostics:
+          hostname: "{{ inventory_hostname }}"
+          os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+          cpu_cores: "{{ ansible_processor_vcpus }}"
+          top_processes: "{{ top_cpu_output.stdout }}"
+          memory: "{{ memory_output.stdout }}"
+          disk: "{{ disk_output.stdout }}"
+          syslog_tail: "{{ syslog_output.stdout | default('unavailable') }}"
+          non_running_services: "{{ relevant_services | map(attribute='key') | list }}"
+          collected_at: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Display collected diagnostics summary
+      ansible.builtin.debug:
+        msg: >
+          Host: {{ host_diagnostics.hostname }} |
+          OS: {{ host_diagnostics.os }} |
+          Non-running services: {{ host_diagnostics.non_running_services | join(', ') or 'none' }}
+
+    - name: Pass diagnostics to next workflow step
+      ansible.builtin.set_stats:
+        data:
+          host_diagnostics: "{{ host_diagnostics }}"
+        per_host: false

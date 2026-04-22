@@ -1,0 +1,81 @@
+---
+# Triage policies interpolated into LLM classifier prompt.
+# Update these policies without touching playbook code.
+
+triage_policies:
+
+  # --- Criticality thresholds ---
+  - id: POL-001
+    name: Critical tier auto-escalate
+    condition: "criticality is tier1 or tier2"
+    action: escalate
+    description: >
+      Any tier1 or tier2 alert must be immediately escalated regardless of
+      maintenance window status or time of day.
+
+  - id: POL-002
+    name: Tier3 maintenance window suppress
+    condition: "criticality is tier3 AND maintenance_window is true"
+    action: suppress
+    description: >
+      Tier3 alerts that arrive during an active maintenance window are
+      considered expected noise. Suppress and log only; do not open a ticket.
+
+  # --- False positive indicators ---
+  - id: POL-003
+    name: Frequent history with corroboration
+    condition: "history is frequent AND related_alerts_count >= 3"
+    action: investigate
+    description: >
+      Alerts with a history of frequent firing AND multiple corroborating signals
+      require deeper investigation before actioning. Send to RCA workflow.
+
+  - id: POL-004
+    name: Single isolated alert outside business hours
+    condition: "time_of_day is outside of business hours AND related_alerts_count == 0"
+    action: monitor
+    description: >
+      Isolated alerts outside business hours with no corroboration are likely
+      transient. Create a low-priority ticket and monitor for recurrence.
+
+  # --- Auto-remediation eligibility ---
+  - id: POL-005
+    name: Known metric eligible for auto-remediation
+    condition: "metric in [node unreachable, high cpu, service down] AND criticality is tier3"
+    action: auto_remediate
+    description: >
+      Well-understood metrics on non-critical systems may be auto-remediated
+      without human approval. Log the action and notify the team.
+
+  - id: POL-006
+    name: Unknown metric requires human approval
+    condition: "metric not in known_metrics"
+    action: human_approval
+    description: >
+      Alerts for metrics not in the known-good remediation list must be routed
+      to a human approval step before any remediation is attempted.
+
+  # --- Internal vs external impact ---
+  - id: POL-007
+    name: Internal-facing lower urgency
+    condition: "additional_context contains internal-facing"
+    action: standard_priority
+    description: >
+      Alerts affecting only internal-facing applications receive standard priority
+      response. External-facing outages should be escalated immediately.
+
+  - id: POL-008
+    name: External-facing high urgency
+    condition: "additional_context contains external-facing"
+    action: escalate
+    description: >
+      Any alert with external customer impact must be escalated and a P1
+      ServiceNow ticket opened within 5 minutes of detection.
+
+# List of metrics with known auto-remediation playbooks
+known_metrics:
+  - "node unreachable"
+  - "high cpu"
+  - "service down"
+  - "disk full"
+  - "memory exhausted"

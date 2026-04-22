@@ -1,0 +1,100 @@
+---
+# Create or update a ServiceNow incident with AI-enriched context.
+# Uses the RCA summary and classification to populate ticket fields.
+# Output variable: snow_ticket_number, snow_ticket_sys_id
+
+- name: Create ServiceNow incident with AI triage context
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    snow_instance: "{{ lookup('env', 'SNOW_INSTANCE') }}"
+    snow_username: "{{ lookup('env', 'SNOW_USERNAME') }}"
+    snow_password: "{{ lookup('env', 'SNOW_PASSWORD') }}"
+    snow_api_base: "https://{{ snow_instance }}.service-now.com/api/now/table"
+
+    urgency_map:
+      critical: "1"
+      high: "2"
+      medium: "3"
+      low: "4"
+
+    impact_map:
+      tier1: "1"
+      tier2: "2"
+      tier3: "3"
+
+    ticket_description: |
+      == SolarWinds AI-Triage Incident ==
+
+      Alert: {{ alert_name }}
+      Source: {{ event_source }}
+      Environment: {{ environment }}
+      Metric: {{ metric }}
+      Duration: {{ duration_minutes }} minutes
+      Time of Day: {{ time_of_day }}
+
+      == AI Classification ==
+      Classification: {{ classification | default('N/A') }}
+      Confidence: {{ classifier_confidence | default('N/A') }}%
+      Matched Policy: {{ matched_policy | default('N/A') }}
+      Reasoning: {{ classifier_reasoning | default('N/A') }}
+
+      == Root Cause Analysis ==
+      Root Cause: {{ rca_root_cause | default('Pending analysis') }}
+      Severity: {{ rca_severity | default('N/A') }}
+      Auto-remediation Safe: {{ rca_auto_remediation_safe | default(false) }}
+
+      Remediation Steps:
+      {% for step in rca_remediation_steps | default([]) %}
+      {{ loop.index }}. {{ step }}
+      {% endfor %}
+
+      == Team Summary ==
+      {{ rca_summary_for_team | default('See details above.') }}
+
+      Event UUID: {{ event_uuid | default('N/A') }}
+
+  tasks:
+    - name: Create ServiceNow incident
+      ansible.builtin.uri:
+        url: "{{ snow_api_base }}/incident"
+        method: POST
+        user: "{{ snow_username }}"
+        password: "{{ snow_password }}"
+        force_basic_auth: true
+        headers:
+          Content-Type: "application/json"
+          Accept: "application/json"
+        body_format: json
+        body:
+          short_description: "[SolarWinds AI] {{ alert_name }} - {{ environment }} - {{ criticality | upper }}"
+          description: "{{ ticket_description }}"
+          urgency: "{{ urgency_map[rca_severity | default('medium')] | default('3') }}"
+          impact: "{{ impact_map[criticality | default('tier3')] | default('3') }}"
+          category: "Software"
+          subcategory: "Application"
+          assignment_group: "{{ snow_assignment_group | default('NOC') }}"
+          caller_id: "ansible_eda"
+          cmdb_ci: "{{ target_host | default('') }}"
+          work_notes: "Ticket auto-created by Ansible EDA + AI triage pipeline."
+        status_code: 201
+        timeout: 30
+      register: snow_response
+
+    - name: Extract ticket details
+      ansible.builtin.set_fact:
+        snow_ticket_number: "{{ snow_response.json.result.number }}"
+        snow_ticket_sys_id: "{{ snow_response.json.result.sys_id }}"
+        snow_ticket_url: "https://{{ snow_instance }}.service-now.com/nav_to.do?uri=incident.do?sys_id={{ snow_response.json.result.sys_id }}"
+
+    - name: Display ticket info
+      ansible.builtin.debug:
+        msg: "ServiceNow ticket created: {{ snow_ticket_number }} | URL: {{ snow_ticket_url }}"
+
+    - name: Pass ticket reference to downstream steps
+      ansible.builtin.set_stats:
+        data:
+          snow_ticket_number: "{{ snow_ticket_number }}"
+          snow_ticket_sys_id: "{{ snow_ticket_sys_id }}"
+          snow_ticket_url: "{{ snow_ticket_url }}"

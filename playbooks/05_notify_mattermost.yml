@@ -1,0 +1,67 @@
+---
+# Post AI triage summary to a Mattermost channel.
+# Includes classification result, RCA summary, and ServiceNow ticket link.
+
+- name: Notify team via Mattermost
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    mattermost_webhook_url: "{{ lookup('env', 'MATTERMOST_WEBHOOK_URL') }}"
+
+    severity_emoji:
+      critical: ":red_circle:"
+      high: ":large_orange_circle:"
+      medium: ":large_yellow_circle:"
+      low: ":white_circle:"
+
+    classification_emoji:
+      real_issue: ":rotating_light:"
+      false_positive: ":white_check_mark:"
+
+    mattermost_message: |
+      {{ classification_emoji[classification | default('real_issue')] }} **SolarWinds AI Alert Triage**
+      {{ severity_emoji[rca_severity | default('medium')] }} **Severity:** {{ rca_severity | default('N/A') | upper }}
+
+      **Alert:** {{ alert_name }}
+      **Source:** {{ event_source }}
+      **Environment:** {{ environment }} | **Criticality:** {{ criticality }}
+      **Metric:** {{ metric }} | **Duration:** {{ duration_minutes }} min
+
+      **AI Classification:** {{ classification | default('N/A') }} ({{ classifier_confidence | default('N/A') }}% confidence)
+      **Matched Policy:** {{ matched_policy | default('None') }}
+
+      **Root Cause:**
+      {{ rca_root_cause | default('Analysis pending.') }}
+
+      **AI Recommendation:**
+      {{ rca_summary_for_team | default('See ServiceNow ticket for details.') }}
+
+      **Remediation Steps:**
+      {% for step in rca_remediation_steps | default([]) %}
+      {{ loop.index }}. {{ step }}
+      {% endfor %}
+
+      **Auto-remediation Safe:** {{ rca_auto_remediation_safe | default(false) }}
+      :ticket: **ServiceNow Ticket:** [{{ snow_ticket_number | default('N/A') }}]({{ snow_ticket_url | default('#') }})
+
+  tasks:
+    - name: Post triage summary to Mattermost
+      ansible.builtin.uri:
+        url: "{{ mattermost_webhook_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          channel: "{{ mattermost_channel | default('#ops-alerts') }}"
+          username: "Ansible EDA Bot"
+          icon_emoji: ":robot_face:"
+          text: "{{ mattermost_message }}"
+        status_code: 200
+        timeout: 15
+      register: mm_response
+
+    - name: Confirm notification sent
+      ansible.builtin.debug:
+        msg: "Mattermost notification delivered to {{ mattermost_channel | default('#ops-alerts') }}"

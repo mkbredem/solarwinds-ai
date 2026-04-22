@@ -1,0 +1,94 @@
+---
+# LLM Call #1 — Classifier
+# Determines whether the incoming SolarWinds alert is a real actionable incident
+# or a false positive, and returns a recommended initial action.
+# Output variable: classifier_result (action: escalate|suppress|investigate|auto_remediate|human_approval)
+
+- name: Classify SolarWinds alert using LLM
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - ../vars/triage_policies.yml
+
+  vars:
+    llm_api_endpoint: "{{ lookup('env', 'LLM_API_ENDPOINT') }}"
+    llm_api_token: "{{ lookup('env', 'LLM_API_TOKEN') }}"
+    llm_model: "{{ llm_model_name | default('gpt-4o') }}"
+
+    classifier_prompt: |
+      You are an expert IT operations analyst specializing in alert triage.
+      Your job is to classify incoming monitoring alerts and recommend an action.
+
+      Triage Policies in effect:
+      {% for policy in triage_policies %}
+      - {{ policy.id }} {{ policy.name }}: {{ policy.description }}
+        Condition: {{ policy.condition }} → Action: {{ policy.action }}
+      {% endfor %}
+
+      Incoming Alert:
+      - Source: {{ event_source }}
+      - Alert Name: {{ alert_name }}
+      - Object Type: {{ object_type }}
+      - Environment: {{ environment }}
+      - Criticality: {{ criticality }}
+      - Metric: {{ metric }}
+      - Duration (minutes): {{ duration_minutes }}
+      - History: {{ history }}
+      - Maintenance Window Active: {{ maintenance_window | default(false) }}
+      - Corroborating Signals: {{ corroboration | join(', ') }}
+      - Related Alert Count: {{ related_alerts_count }}
+      - Time of Day: {{ time_of_day }}
+      - Additional Context: {{ additional_context }}
+
+      Respond ONLY with a JSON object in this exact format:
+      {
+        "classification": "real_issue" or "false_positive",
+        "confidence": 0-100,
+        "recommended_action": "escalate|suppress|investigate|auto_remediate|human_approval",
+        "reasoning": "one or two sentences explaining your decision",
+        "matched_policy": "POL-XXX or null"
+      }
+
+  tasks:
+    - name: Send alert to LLM classifier
+      ansible.builtin.uri:
+        url: "{{ llm_api_endpoint }}/v1/chat/completions"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ llm_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          model: "{{ llm_model }}"
+          temperature: 0.1
+          messages:
+            - role: "system"
+              content: "You are an expert IT operations analyst. Always respond with valid JSON only."
+            - role: "user"
+              content: "{{ classifier_prompt }}"
+        timeout: 60
+        status_code: 200
+      register: llm_response
+
+    - name: Parse classifier response
+      ansible.builtin.set_fact:
+        classifier_result: "{{ llm_response.json.choices[0].message.content | from_json }}"
+
+    - name: Display classifier decision
+      ansible.builtin.debug:
+        msg: >
+          Classification: {{ classifier_result.classification }}
+          (confidence: {{ classifier_result.confidence }}%) |
+          Action: {{ classifier_result.recommended_action }} |
+          Policy: {{ classifier_result.matched_policy }} |
+          Reason: {{ classifier_result.reasoning }}
+
+    - name: Set stats for downstream workflow steps
+      ansible.builtin.set_stats:
+        data:
+          classification: "{{ classifier_result.classification }}"
+          recommended_action: "{{ classifier_result.recommended_action }}"
+          classifier_confidence: "{{ classifier_result.confidence }}"
+          classifier_reasoning: "{{ classifier_result.reasoning }}"
+          matched_policy: "{{ classifier_result.matched_policy }}"

@@ -1,0 +1,108 @@
+---
+# LLM Call #2 — Root Cause Analysis
+# Sends host diagnostics gathered in step 02 to the LLM for RCA.
+# Produces a human-readable root cause summary and recommended remediation steps.
+# Output variable: rca_result
+
+- name: Perform AI root cause analysis
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    llm_api_endpoint: "{{ lookup('env', 'LLM_API_ENDPOINT') }}"
+    llm_api_token: "{{ lookup('env', 'LLM_API_TOKEN') }}"
+    llm_model: "{{ llm_model_name | default('gpt-4o') }}"
+
+    rca_prompt: |
+      You are a technical expert specializing in Linux and Windows system administration
+      and IT operations. Perform a root cause analysis on the following alert and
+      host diagnostic data.
+
+      Alert Context:
+      - Alert Name: {{ alert_name }}
+      - Metric: {{ metric }}
+      - Duration (minutes): {{ duration_minutes }}
+      - Environment: {{ environment }}
+      - Criticality: {{ criticality }}
+      - Additional Context: {{ additional_context }}
+      - Initial Classification: {{ classification | default('unknown') }}
+      - Classifier Reasoning: {{ classifier_reasoning | default('N/A') }}
+
+      Host Diagnostics:
+      - Hostname: {{ host_diagnostics.hostname }}
+      - OS: {{ host_diagnostics.os }}
+      - CPU Cores: {{ host_diagnostics.cpu_cores }}
+
+      Top Processes by CPU:
+      {{ host_diagnostics.top_processes }}
+
+      Memory:
+      {{ host_diagnostics.memory }}
+
+      Disk:
+      {{ host_diagnostics.disk }}
+
+      Non-Running Services: {{ host_diagnostics.non_running_services | join(', ') or 'none detected' }}
+
+      Recent Syslog:
+      {{ host_diagnostics.syslog_tail }}
+
+      Based on this data, provide:
+      1. Root cause determination — is this a real issue or likely a false positive?
+         Explain why with reference to the diagnostic data.
+      2. Severity assessment — how urgent is this?
+      3. Recommended remediation steps (be specific and actionable).
+      4. Whether this can be auto-remediated safely or requires human review.
+
+      Respond ONLY with a JSON object in this exact format:
+      {
+        "root_cause": "concise root cause description",
+        "severity": "critical|high|medium|low",
+        "is_false_positive": true or false,
+        "auto_remediation_safe": true or false,
+        "remediation_steps": ["step 1", "step 2", "step 3"],
+        "summary_for_team": "2-3 sentence plain-English summary suitable for a Mattermost notification"
+      }
+
+  tasks:
+    - name: Send diagnostics to LLM for root cause analysis
+      ansible.builtin.uri:
+        url: "{{ llm_api_endpoint }}/v1/chat/completions"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ llm_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          model: "{{ llm_model }}"
+          temperature: 0.2
+          messages:
+            - role: "system"
+              content: "You are a senior SRE and Linux expert. Always respond with valid JSON only."
+            - role: "user"
+              content: "{{ rca_prompt }}"
+        timeout: 90
+        status_code: 200
+      register: rca_response
+
+    - name: Parse RCA response
+      ansible.builtin.set_fact:
+        rca_result: "{{ rca_response.json.choices[0].message.content | from_json }}"
+
+    - name: Display RCA summary
+      ansible.builtin.debug:
+        msg: >
+          Root Cause: {{ rca_result.root_cause }} |
+          Severity: {{ rca_result.severity }} |
+          False Positive: {{ rca_result.is_false_positive }} |
+          Auto-remediation safe: {{ rca_result.auto_remediation_safe }}
+
+    - name: Pass RCA results to downstream steps
+      ansible.builtin.set_stats:
+        data:
+          rca_root_cause: "{{ rca_result.root_cause }}"
+          rca_severity: "{{ rca_result.severity }}"
+          rca_is_false_positive: "{{ rca_result.is_false_positive }}"
+          rca_auto_remediation_safe: "{{ rca_result.auto_remediation_safe }}"
+          rca_remediation_steps: "{{ rca_result.remediation_steps }}"
+          rca_summary_for_team: "{{ rca_result.summary_for_team }}"

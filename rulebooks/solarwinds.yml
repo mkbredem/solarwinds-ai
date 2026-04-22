@@ -1,14 +1,57 @@
 ---
-- name: Debug incoming event payload
+- name: SolarWinds AI Triage - EDA Rulebook
   hosts: all
   sources:
-    - ansible.eda.webhook:
-        host: 0.0.0.0
-        port: 5000
+    - ansible.eda.aws_sqs_queue:
+        region: "{{ eda_aws_region }}"
+        queue_url: "{{ eda_sqs_queue_url }}"
+    # Uncomment below to use the AAP external event stream instead of SQS:
+    # - ansible.eda.pg_listener:
+    #     dsn: "{{ eda_pg_dsn }}"
+    #     channels:
+    #       - solarwinds
 
   rules:
-    - name: Print full incoming payload
+
+    # --- Maintenance window: suppress tier3 alerts ---
+    - name: Suppress tier3 alerts during maintenance window
+      condition: >
+        event.payload.alert.criticality == "tier3" and
+        event.payload.alert.maintenance_window == true
+      action:
+        debug:
+          msg: >
+            "Suppressed: {{ event.payload.alert.alert_name }} on
+             {{ event.payload.source }} - maintenance window active."
+
+    # --- Real incident: run full AI triage workflow ---
+    - name: Launch AI triage workflow for actionable alerts
+      condition: >
+        event.payload.alert is defined and
+        event.payload.alert.maintenance_window == false
+      action:
+        run_job_template:
+          name: "SW AI - Full Triage Workflow"
+          organization: "Default"
+          job_args:
+            extra_vars:
+              alert_name: "{{ event.payload.alert.alert_name }}"
+              object_type: "{{ event.payload.alert.object_type }}"
+              environment: "{{ event.payload.alert.environment }}"
+              criticality: "{{ event.payload.alert.criticality }}"
+              metric: "{{ event.payload.alert.metric }}"
+              duration_minutes: "{{ event.payload.alert.duration_minutes }}"
+              history: "{{ event.payload.alert.history }}"
+              corroboration: "{{ event.payload.alert.corroboration }}"
+              related_alerts_count: "{{ event.payload.alert.related_alerts_count }}"
+              time_of_day: "{{ event.payload.alert.time_of_day }}"
+              additional_context: "{{ event.payload.alert.additional_context }}"
+              event_source: "{{ event.payload.source }}"
+              event_uuid: "{{ event.meta.uuid }}"
+
+    # --- Catch-all debug rule ---
+    - name: Log unmatched events
       condition: event.payload is defined
       action:
         debug:
-          msg: "{{ event }}"
+          msg: "Unmatched event received: {{ event.payload }}"
