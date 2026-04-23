@@ -1,0 +1,16 @@
+---
+- name: SolarWinds Simple Debug - EDA Rulebook
+  hosts: all
+  sources:
+    - ansible.eda.pg_listener:
+        dsn: "{{ eda_pg_dsn }}"
+        channels:
+          - solarwinds
+
+  rules:
+
+    - name: Debug incoming payload as YAML
+      condition: event.payload is defined
+      action:
+        debug:
+          msg: "{{ event.payload | to_nice_yaml }}"

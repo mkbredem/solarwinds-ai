@@ -1,79 +1,52 @@
 ---
 # LLM Call #1 — Classifier
-# Determines whether the incoming SolarWinds alert is a real actionable incident
-# or a false positive, and returns a recommended initial action.
-# Output variable: classifier_result (action: escalate|suppress|investigate|auto_remediate|human_approval)
+# Determines whether the incoming SolarWinds alert is actionable or noise and
+# returns a recommended initial action.
+# Output variable: classifier_result (keys: classification, confidence,
+#   reason_codes, explanation, recommended_action)
 
 - name: Classify SolarWinds alert using LLM
   hosts: localhost
   gather_facts: false
 
-  vars_files:
-    - ../vars/triage_policies.yml
-
   vars:
-    llm_api_endpoint: "{{ lookup('env', 'LLM_API_ENDPOINT') }}"
-    llm_api_token: "{{ lookup('env', 'LLM_API_TOKEN') }}"
-    llm_model: "{{ llm_model_name | default('gpt-4o') }}"
+    # Fallback to environment variables if secrets.yml does not define these.
+    llm_api_endpoint: "{{ lookup('env', 'LLM_API_ENDPOINT') | default('https://litellm-prod.apps.maas.redhatworkshops.io/v1', true) }}"
+    llm_api_token: "{{ lookup('env', 'LLM_API_TOKEN') | default(lookup('env', 'OPENAI_API_KEY') | default(lookup('env', 'API_KEY'), true), true) }}"
+    llm_model: "{{ llm_model_name | default('granite-3-2-8b-instruct') }}"
 
-    classifier_prompt: |
-      You are an expert IT operations analyst specializing in alert triage.
-      Your job is to classify incoming monitoring alerts and recommend an action.
+  # Expose secrets as OS environment variables so that any script or command
+  # task in this play (e.g. callmodel.py, cmdb_agent.py, Trigger_SW.py) can
+  # read them via os.environ without extra plumbing.
+  environment:
+    OPENAI_API_KEY: "{{ llm_api_token }}"
+    API_KEY: "{{ llm_api_token }}"
+    LLM_API_ENDPOINT: "{{ llm_api_endpoint }}"
+    TRIGGER_SW_WEBHOOK_URL: "{{ eda_webhook_url | default('') }}"
+    TRIGGER_SW_AUTH: "{{ eda_webhook_token | default('') }}"
 
-      Triage Policies in effect:
-      {% for policy in triage_policies %}
-      - {{ policy.id }} {{ policy.name }}: {{ policy.description }}
-        Condition: {{ policy.condition }} → Action: {{ policy.action }}
-      {% endfor %}
+  pre_tasks:
+    - name: Load secrets from vars/secrets.yml
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../vars/secrets.yml"
+      no_log: true
 
-      Incoming Alert:
-      - Source: {{ event_source }}
-      - Alert Name: {{ alert_name }}
-      - Object Type: {{ object_type }}
-      - Environment: {{ environment }}
-      - Criticality: {{ criticality }}
-      - Metric: {{ metric }}
-      - Duration (minutes): {{ duration_minutes }}
-      - History: {{ history }}
-      - Maintenance Window Active: {{ maintenance_window | default(false) }}
-      - Corroborating Signals: {{ corroboration | join(', ') }}
-      - Related Alert Count: {{ related_alerts_count }}
-      - Time of Day: {{ time_of_day }}
-      - Additional Context: {{ additional_context }}
-
-      Respond ONLY with a JSON object in this exact format:
-      {
-        "classification": "real_issue" or "false_positive",
-        "confidence": 0-100,
-        "recommended_action": "escalate|suppress|investigate|auto_remediate|human_approval",
-        "reasoning": "one or two sentences explaining your decision",
-        "matched_policy": "POL-XXX or null"
-      }
+    - name: Assert required secrets are present and non-empty
+      ansible.builtin.assert:
+        that:
+          - llm_api_token is defined
+          - llm_api_token | length > 0
+          - llm_api_token != 'CHANGEME'
+          - llm_api_endpoint is defined
+          - llm_api_endpoint | length > 0
+        fail_msg: >
+          vars/secrets.yml is missing or still contains placeholder values.
+          Set llm_api_token and llm_api_endpoint before running this playbook.
+        quiet: true
 
   tasks:
-    - name: Send alert to LLM classifier
-      ansible.builtin.uri:
-        url: "{{ llm_api_endpoint }}/v1/chat/completions"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ llm_api_token }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          model: "{{ llm_model }}"
-          temperature: 0.1
-          messages:
-            - role: "system"
-              content: "You are an expert IT operations analyst. Always respond with valid JSON only."
-            - role: "user"
-              content: "{{ classifier_prompt }}"
-        timeout: 60
-        status_code: 200
-      register: llm_response
-
-    - name: Parse classifier response
-      ansible.builtin.set_fact:
-        classifier_result: "{{ llm_response.json.choices[0].message.content | from_json }}"
+    - name: Run LLM classifier (tasks/call_model.yml)
+      ansible.builtin.include_tasks: tasks/call_model.yml
 
     - name: Display classifier decision
       ansible.builtin.debug:
@@ -81,8 +54,7 @@
           Classification: {{ classifier_result.classification }}
           (confidence: {{ classifier_result.confidence }}%) |
           Action: {{ classifier_result.recommended_action }} |
-          Policy: {{ classifier_result.matched_policy }} |
-          Reason: {{ classifier_result.reasoning }}
+          Reason: {{ classifier_result.explanation }}
 
     - name: Set stats for downstream workflow steps
       ansible.builtin.set_stats:
@@ -90,5 +62,5 @@
           classification: "{{ classifier_result.classification }}"
           recommended_action: "{{ classifier_result.recommended_action }}"
           classifier_confidence: "{{ classifier_result.confidence }}"
-          classifier_reasoning: "{{ classifier_result.reasoning }}"
-          matched_policy: "{{ classifier_result.matched_policy }}"
+          classifier_reason_codes: "{{ classifier_result.reason_codes }}"
+          classifier_explanation: "{{ classifier_result.explanation }}"

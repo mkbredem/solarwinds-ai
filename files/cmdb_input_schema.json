@@ -1,0 +1,50 @@
+{
+  "description": "CMDB Lookup Input Schema",
+  "type": "object",
+  "required": [
+    "lookup_key"
+  ],
+  "properties": {
+    "lookup_key": {
+      "type": "string",
+      "description": "Primary identifier such as hostname, IP, CI name, or application name"
+    },
+    "lookup_type": {
+      "type": "string",
+      "enum": [
+        "hostname",
+        "ip",
+        "ci_name",
+        "application"
+      ],
+      "description": "Type of lookup key"
+    },
+    "environment_hint": {
+      "type": "string",
+      "enum": [
+        "prod",
+        "staging",
+        "dev"
+      ],
+      "description": "Optional hint to improve matching"
+    },
+    "additional_context": {
+      "type": "object",
+      "description": "Optional additional metadata from alert",
+      "properties": {
+        "ip_address": {
+          "type": "string"
+        },
+        "fqdn": {
+          "type": "string"
+        },
+        "application": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

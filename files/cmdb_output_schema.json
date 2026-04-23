@@ -1,0 +1,96 @@
+{
+  "description": "CMDB Enrichment Output Schema",
+  "type": "object",
+  "required": [
+    "ci_name",
+    "match_confidence"
+  ],
+  "properties": {
+    "ci_name": {
+      "type": "string"
+    },
+    "ci_id": {
+      "type": "string"
+    },
+    "ci_class": {
+      "type": "string"
+    },
+    "hostname": {
+      "type": "string"
+    },
+    "ip_address": {
+      "type": "string"
+    },
+    "environment": {
+      "type": "string"
+    },
+    "region": {
+      "type": "string"
+    },
+    "datacenter": {
+      "type": "string"
+    },
+    "business_service": {
+      "type": "string"
+    },
+    "application": {
+      "type": "string"
+    },
+    "service_offering": {
+      "type": "string"
+    },
+    "customer_facing": {
+      "type": "boolean"
+    },
+    "criticality": {
+      "type": "string"
+    },
+    "assignment_group": {
+      "type": "string"
+    },
+    "owning_team": {
+      "type": "string"
+    },
+    "support_group": {
+      "type": "string"
+    },
+    "escalation_group": {
+      "type": "string"
+    },
+    "parent_services": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "dependent_services": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "match_confidence": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "match_type": {
+      "type": "string",
+      "enum": [
+        "exact",
+        "fuzzy",
+        "multiple_candidates",
+        "no_match"
+      ]
+    },
+    "data_quality_flags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

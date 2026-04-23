@@ -1,0 +1,41 @@
+[
+  {
+    "lookup_key": "web-prd-az1-07.corp.example.com",
+    "lookup_type": "hostname",
+    "environment_hint": "prod",
+    "additional_context": {
+      "ip_address": "10.12.34.56",
+      "fqdn": "web-prd-az1-07.corp.example.com",
+      "application": "CustomerPortal",
+      "region": "us-east-1"
+    }
+  },
+  {
+    "lookup_key": "192.0.2.45",
+    "lookup_type": "ip",
+    "environment_hint": "staging",
+    "additional_context": {
+      "fqdn": "db-stg-01.internal.example.com",
+      "region": "us-west-2"
+    }
+  },
+  {
+    "lookup_key": "LINUX-SRV-ORDERS-042",
+    "lookup_type": "ci_name",
+    "environment_hint": "prod",
+    "additional_context": {
+      "application": "OrderManagement"
+    }
+  },
+  {
+    "lookup_key": "PaymentGatewayAPI",
+    "lookup_type": "application",
+    "environment_hint": "dev",
+    "additional_context": {
+      "region": "eu-central-1"
+    }
+  },
+  {
+    "lookup_key": "minimal-example-only-required-field"
+  }
+]

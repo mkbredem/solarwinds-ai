@@ -1,0 +1,129 @@
+SolarWinds Alert Classification Policy (LLM-Optimized) v1.0
+
+SECTION 1: OBJECTIVE
+Classify each SolarWinds alert into a single category using consistent, evidence-based reasoning.
+Prioritize avoiding missed real incidents over aggressive suppression.
+
+SECTION 2: ALLOWED CLASSIFICATIONS
+You MUST choose exactly one:
+- ignore
+- noise_likely
+- false_positive_likely
+- actionable_nonurgent
+- actionable_urgent
+- needs_review
+
+SECTION 3: DEFINITIONS
+
+noise_likely:
+Alert is expected, transient, or low value. No action required.
+
+false_positive_likely:
+Alert contradicts other signals or is caused by monitoring error.
+
+actionable_nonurgent:
+Real issue but not time-critical. Requires follow-up.
+
+actionable_urgent:
+Real issue with high impact or outage. Immediate action required.
+
+needs_review:
+Insufficient or conflicting information.
+
+ignore:
+Safe to drop entirely (e.g., maintenance window).
+
+SECTION 4: ENVIRONMENT PRIORITY
+
+Apply priority in this order:
+- prod > staging > dev
+
+Rules:
+- dev/test alerts default to noise unless strong evidence of impact
+- prod alerts default to higher severity unless downgraded by rules
+
+SECTION 5: BUSINESS CRITICALITY
+
+Criticality levels:
+- tier1: customer-facing / revenue impacting
+- tier2: important internal
+- tier3: low impact
+
+Rules:
+- tier1 + outage signals → actionable_urgent
+- tier2+customer facing→  actionable_urgent
+- tier3 + transient issue → noise_likely
+
+SECTION 6: MAINTENANCE WINDOW
+
+If maintenance_window = true:
+- default → ignore
+
+Exceptions:
+- if multiple systems impacted → needs_review
+- if alert persists >30 minutes beyond window → evaluate normally
+
+SECTION 7: DURATION & TRANSIENCE
+
+Rules:
+- short duration (<5 minutes) + auto-resolve → noise_likely
+- sustained (>10 minutes) → evaluate for actionability
+- increasing duration raises severity
+
+SECTION 8: DUPLICATE & FLAPPING
+
+Definitions:
+- duplicate: repeated alert for same object
+- flapping: repeated trigger + clear cycles
+
+Rules:
+- >3 occurrences in 15 minutes → noise_likely
+- repeated auto-resolve → false_positive_likely
+- persistent (no clear) → evaluate as actionable
+
+SECTION 9: CORROBORATION
+
+Increase severity if:
+- multiple alerts on same system
+- dependency failures (app, db, network)
+- user impact observed
+- logs show errors
+
+Decrease severity if:
+- single isolated alert
+- all other signals healthy
+
+SECTION 10: ESCALATION RULES
+
+Classify as actionable_urgent if:
+- prod + tier1 + outage condition
+- node unreachable >5 minutes
+- database or application down
+- multiple services impacted
+
+Classify as actionable_nonurgent if:
+- degradation without outage
+- threshold breach without impact evidence
+
+SECTION 11: AMBIGUITY HANDLING
+
+If:
+- missing data
+- conflicting signals
+- low confidence
+
+Then:
+→ needs_review
+
+SECTION 12: DEFAULT SAFETY RULE
+
+If uncertain:
+→ always choose needs_review
+
+SECTION 13: OUTPUT REQUIREMENTS
+
+You MUST:
+- base reasoning only on provided data
+- not invent missing context
+- provide concise justification
+- assign a confidence score (0–100)

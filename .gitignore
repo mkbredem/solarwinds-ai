@@ -1,0 +1,13 @@
+# Ansible vault password file
+.vault_pass
+
+# Local Python environment variables (for running scripts outside Ansible)
+.env
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Ansible retry files
+*.retry

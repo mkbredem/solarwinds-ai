@@ -1,0 +1,134 @@
+---
+# Ansible equivalent of callmodel.py::classify_alert()
+#
+# Required vars (passed from the including playbook):
+#   llm_api_endpoint  - base URL, e.g. https://litellm-prod.../v1
+#   llm_api_token     - Bearer token
+#   llm_model         - model name
+#   alert_name, object_type, environment, criticality, metric,
+#   duration_minutes, history, maintenance_window (bool),
+#   corroboration (list), related_alerts_count, time_of_day,
+#   additional_context
+#
+# Output fact: classifier_result (dict with keys:
+#   classification, confidence, reason_codes, explanation, recommended_action)
+
+- name: Load alert classification policy from file
+  ansible.builtin.set_fact:
+    _policy_text: "{{ lookup('file', playbook_dir + '/../files/solarwinds_alert_policy_rules.txt') }}"
+
+- name: Build LLM user prompt
+  ansible.builtin.set_fact:
+    _call_model_user_prompt: |
+      CLASSIFICATION POLICY:
+      {{ _policy_text }}
+
+      FEW-SHOT EXAMPLES:
+      Example 1:
+      INPUT:
+      CPU > 90% for 2 minutes, env=dev, recurring auto-resolve, no corroboration
+
+      OUTPUT:
+      {
+        "classification": "noise_likely",
+        "confidence": 90,
+        "reason_codes": ["short_duration", "non_prod", "recurring_pattern"],
+        "explanation": "transient CPU spike in dev with no impact",
+        "recommended_action": "suppress"
+      }
+
+      ---
+
+      Example 2:
+      INPUT:
+      Node unreachable 6 min, env=prod, tier1, multiple services impacted
+
+      OUTPUT:
+      {
+        "classification": "actionable_urgent",
+        "confidence": 95,
+        "reason_codes": ["prod_outage", "tier1", "corroborated_failure"],
+        "explanation": "confirmed production outage with service impact",
+        "recommended_action": "page_on_call"
+      }
+
+      ALERT TO CLASSIFY:
+      {{ {
+           "alert_name": alert_name,
+           "object_type": object_type,
+           "environment": environment,
+           "criticality": criticality,
+           "metric": metric,
+           "duration_minutes": duration_minutes | int,
+           "history": history,
+           "maintenance_window": maintenance_window | bool,
+           "corroboration": corroboration,
+           "related_alerts_count": related_alerts_count | int,
+           "time_of_day": time_of_day,
+           "additional_context": additional_context
+         } | to_nice_json }}
+
+      OUTPUT FORMAT:
+      Return ONLY valid JSON — no extra text, no markdown fences:
+
+      {
+        "classification": "ignore | noise_likely | false_positive_likely | actionable_nonurgent | actionable_urgent | needs_review",
+        "confidence": 0-100,
+        "reason_codes": ["string"],
+        "explanation": "short explanation",
+        "recommended_action": "suppress | dedupe | create_ticket | route_to_team | page_on_call | needs_review"
+      }
+
+- name: Send alert to LLM classifier
+  ansible.builtin.uri:
+    url: "{{ llm_api_endpoint.rstrip('/') }}/chat/completions"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ llm_api_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      model: "{{ llm_model }}"
+      temperature: 0.1
+      messages:
+        - role: "system"
+          content: |
+            You are an expert NOC (Network Operations Center) alert triage analyst.
+
+            Your task is to classify SolarWinds alerts using:
+            1. The classification policy
+            2. The provided examples
+            3. The alert input data
+
+            STRICT RULES:
+            - Use ONLY the provided input data
+            - Do NOT assume missing information
+            - Follow the policy exactly
+            - Prefer conservative decisions (avoid missing real incidents)
+            - If uncertain, choose "needs_review"
+
+            You MUST NOT:
+            - Invent context
+            - Override policy
+            - Use external knowledge
+
+            Your output MUST:
+            - Be valid JSON
+            - Follow the exact schema provided
+            - Contain no extra text outside JSON
+        - role: "user"
+          content: "{{ _call_model_user_prompt }}"
+    timeout: 60
+    status_code: 200
+  register: _llm_raw_response
+
+- name: Strip optional markdown fences from model output
+  ansible.builtin.set_fact:
+    _model_output_text: >-
+      {{ _llm_raw_response.json.choices[0].message.content
+         | regex_replace('(?s)^```[^\n]*\n(.*\S)\n```$', '\1')
+         | trim }}
+
+- name: Parse classifier JSON response
+  ansible.builtin.set_fact:
+    classifier_result: "{{ _model_output_text | from_json }}"

@@ -1,0 +1,101 @@
+SolarWinds LLM Enhanced Examples (High-Signal Few-Shot)
+
+Example 1:
+INPUT:
+CPU > 90% for 2 minutes, env=dev, recurring auto-resolve, no corroboration
+OUTPUT:
+classification: noise_likely
+confidence: 90
+reason_codes: [short_duration, non_prod, recurring_pattern]
+explanation: transient CPU spike in dev with no impact
+recommended_action: suppress
+
+Example 2:
+INPUT:
+CPU > 95% for 15 minutes, env=prod, tier1, app latency increased
+OUTPUT:
+classification: actionable_nonurgent
+confidence: 85
+reason_codes: [sustained_load, prod, performance_degradation]
+explanation: sustained high CPU impacting performance but not outage
+recommended_action: create_ticket
+
+Example 3:
+INPUT:
+Node unreachable 6 min, env=prod, tier1, multiple services impacted
+OUTPUT:
+classification: actionable_urgent
+confidence: 95
+reason_codes: [prod_outage, tier1, corroborated_failure]
+explanation: confirmed production outage with service impact
+recommended_action: page_on_call
+
+Example 4:
+INPUT:
+Node unreachable, maintenance_window=true
+OUTPUT:
+classification: ignore
+confidence: 95
+reason_codes: [maintenance_window]
+explanation: expected downtime during maintenance
+recommended_action: suppress
+
+Example 5:
+INPUT:
+Interface flapping 5 times in 10 min, no impact
+OUTPUT:
+classification: noise_likely
+confidence: 85
+reason_codes: [flapping, no_impact]
+explanation: repeated flapping without service degradation
+recommended_action: dedupe
+
+Example 6:
+INPUT:
+Disk usage 85%, prod, increasing trend, no impact
+OUTPUT:
+classification: actionable_nonurgent
+confidence: 80
+reason_codes: [capacity_threshold, trend_increasing]
+explanation: approaching capacity but no immediate risk
+recommended_action: create_ticket
+
+Example 7:
+INPUT:
+Disk usage 98%, prod, app errors present
+OUTPUT:
+classification: actionable_urgent
+confidence: 95
+reason_codes: [disk_full, service_impact]
+explanation: disk full causing application failure
+recommended_action: page_on_call
+
+Example 8:
+INPUT:
+App down alert but health checks and logs normal
+OUTPUT:
+classification: false_positive_likely
+confidence: 85
+reason_codes: [conflicting_signals, monitoring_issue]
+explanation: alert contradicts healthy system signals
+recommended_action: needs_review
+
+Example 9:
+INPUT:
+DB latency spike 3 min, prod, resolves quickly
+OUTPUT:
+classification: noise_likely
+confidence: 80
+reason_codes: [short_duration, transient]
+explanation: brief latency spike with no sustained impact
+recommended_action: suppress
+
+Example 10:
+INPUT:
+DB down, prod, tier1
+OUTPUT:
+classification: actionable_urgent
+confidence: 98
+reason_codes: [db_down, critical_service]
+explanation: database outage in production
+recommended_action: page_on_call
