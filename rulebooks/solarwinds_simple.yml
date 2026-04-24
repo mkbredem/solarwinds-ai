@@ -9,6 +9,14 @@
 
   rules:
 
+    - name: Classify SolarWinds event via job template
+      condition: event.payload is defined
+      action:
+        run_job_template:
+          name: "mbredeme - classify solarwindsai event"
+          organization: "Infrastructure"
+          post_events: true
+
     - name: Debug incoming payload as YAML
       condition: event.payload is defined
       action:
