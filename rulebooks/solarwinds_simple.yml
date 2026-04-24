@@ -16,9 +16,43 @@
           name: "mbredeme - classify solarwindsai event"
           organization: "Infrastructure"
           post_events: true
+          job_args:
+            extra_vars:
+              event_source: "{{ event.payload.source }}"
+              event_uuid: "{{ event.meta.uuid }}"
+              alert_name: "{{ event.payload.alert.alert_name }}"
+              object_type: "{{ event.payload.alert.object_type }}"
+              environment: "{{ event.payload.alert.environment }}"
+              criticality: "{{ event.payload.alert.criticality }}"
+              metric: "{{ event.payload.alert.metric }}"
+              duration_minutes: "{{ event.payload.alert.duration_minutes }}"
+              history: "{{ event.payload.alert.history }}"
+              maintenance_window: "{{ event.payload.alert.maintenance_window }}"
+              corroboration: "{{ event.payload.alert.corroboration }}"
+              related_alerts_count: "{{ event.payload.alert.related_alerts_count }}"
+              time_of_day: "{{ event.payload.alert.time_of_day }}"
+              additional_context: "{{ event.payload.alert.additional_context }}"
 
-    - name: Debug incoming payload as YAML
-      condition: event.payload is defined
+    - name: Debug classifier result for actionable events
+      condition: >
+        event.data.classification is defined and
+        event.data.classification != "ignore"
       action:
         debug:
-          msg: "{{ event.payload | to_nice_yaml }}"
+          msg: |
+            === Classifier Result ===
+            {{ event.data | to_nice_yaml }}
+            === Original Alert ===
+            source:            {{ event.payload.source }}
+            alert_name:        {{ event.payload.alert.alert_name }}
+            object_type:       {{ event.payload.alert.object_type }}
+            environment:       {{ event.payload.alert.environment }}
+            criticality:       {{ event.payload.alert.criticality }}
+            metric:            {{ event.payload.alert.metric }}
+            duration_minutes:  {{ event.payload.alert.duration_minutes }}
+            history:           {{ event.payload.alert.history }}
+            maintenance_window: {{ event.payload.alert.maintenance_window }}
+            corroboration:     {{ event.payload.alert.corroboration }}
+            related_alerts_count: {{ event.payload.alert.related_alerts_count }}
+            time_of_day:       {{ event.payload.alert.time_of_day }}
+            additional_context: {{ event.payload.alert.additional_context }}
