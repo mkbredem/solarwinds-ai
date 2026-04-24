@@ -5,7 +5,7 @@
 #   llm_api_endpoint  - base URL, e.g. https://litellm-prod.../v1
 #   llm_api_token     - Bearer token
 #   llm_model         - model name
-#   alert_name, object_type, environment, criticality, metric,
+#   alert_name, object_type, alert_environment, criticality, metric,
 #   duration_minutes, history, maintenance_window (bool),
 #   corroboration (list), related_alerts_count, time_of_day,
 #   additional_context
@@ -56,7 +56,7 @@
       {{ {
            "alert_name": alert_name,
            "object_type": object_type,
-           "environment": environment,
+           "environment": alert_environment,
            "criticality": criticality,
            "metric": metric,
            "duration_minutes": duration_minutes | int,
@@ -121,6 +121,9 @@
     timeout: 60
     status_code: 200
   register: _llm_raw_response
+  retries: 3
+  delay: 5
+  until: _llm_raw_response.status is defined and _llm_raw_response.status == 200
 
 - name: Strip optional markdown fences from model output
   ansible.builtin.set_fact:
@@ -130,5 +133,21 @@
          | trim }}
 
 - name: Parse classifier JSON response
-  ansible.builtin.set_fact:
-    classifier_result: "{{ _model_output_text | from_json }}"
+  block:
+    - name: Set classifier_result from model output (native-types aware)
+      # Jinja2 native-types (default in modern Ansible/AAP EEs) can auto-coerce
+      # a JSON-looking string into a dict when it's stored via set_fact. Handle
+      # both shapes so a perfectly valid response doesn't trip from_json.
+      ansible.builtin.set_fact:
+        classifier_result: >-
+          {{ _model_output_text
+             if (_model_output_text is mapping)
+             else (_model_output_text | from_json) }}
+  rescue:
+    - name: Fail with diagnostics on unparseable LLM output
+      ansible.builtin.fail:
+        msg: |
+          LLM response was not valid JSON. Raw output was:
+          ----8<----
+          {{ _model_output_text | default('<empty>') }}
+          ----8<----

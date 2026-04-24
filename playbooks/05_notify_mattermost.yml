@@ -25,7 +25,7 @@
 
       **Alert:** {{ alert_name }}
       **Source:** {{ event_source }}
-      **Environment:** {{ environment }} | **Criticality:** {{ criticality }}
+      **Environment:** {{ alert_environment }} | **Criticality:** {{ criticality }}
       **Metric:** {{ metric }} | **Duration:** {{ duration_minutes }} min
 
       **AI Classification:** {{ classification | default('N/A') }} ({{ classifier_confidence | default('N/A') }}% confidence)

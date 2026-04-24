@@ -22,7 +22,7 @@
       - Alert Name: {{ alert_name }}
       - Metric: {{ metric }}
       - Duration (minutes): {{ duration_minutes }}
-      - Environment: {{ environment }}
+      - Environment: {{ alert_environment }}
       - Criticality: {{ criticality }}
       - Additional Context: {{ additional_context }}
       - Initial Classification: {{ classification | default('unknown') }}

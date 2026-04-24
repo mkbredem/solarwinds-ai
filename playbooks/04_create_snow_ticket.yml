@@ -29,7 +29,7 @@
 
       Alert: {{ alert_name }}
       Source: {{ event_source }}
-      Environment: {{ environment }}
+      Environment: {{ alert_environment }}
       Metric: {{ metric }}
       Duration: {{ duration_minutes }} minutes
       Time of Day: {{ time_of_day }}
@@ -68,7 +68,7 @@
           Accept: "application/json"
         body_format: json
         body:
-          short_description: "[SolarWinds AI] {{ alert_name }} - {{ environment }} - {{ criticality | upper }}"
+          short_description: "[SolarWinds AI] {{ alert_name }} - {{ alert_environment }} - {{ criticality | upper }}"
           description: "{{ ticket_description }}"
           urgency: "{{ urgency_map[rca_severity | default('medium')] | default('3') }}"
           impact: "{{ impact_map[criticality | default('tier3')] | default('3') }}"

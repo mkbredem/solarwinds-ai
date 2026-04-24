@@ -21,7 +21,7 @@
     event_source: "{{ event_source | default('') }}"
     alert_name: "{{ alert_name | default('') }}"
     object_type: "{{ object_type | default('') }}"
-    environment: "{{ environment | default('') }}"
+    alert_environment: "{{ alert_environment | default('') }}"
     criticality: "{{ criticality | default('') }}"
     metric: "{{ metric | default('') }}"
     duration_minutes: "{{ duration_minutes | default(0) }}"
@@ -66,7 +66,7 @@
         that:
           - alert_name | length > 0
           - object_type | length > 0
-          - environment | length > 0
+          - alert_environment | length > 0
           - criticality | length > 0
           - metric | length > 0
         fail_msg: >

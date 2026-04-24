@@ -37,7 +37,7 @@
             extra_vars:
               alert_name: "{{ event.payload.alert.alert_name }}"
               object_type: "{{ event.payload.alert.object_type }}"
-              environment: "{{ event.payload.alert.environment }}"
+              alert_environment: "{{ event.payload.alert.environment }}"
               criticality: "{{ event.payload.alert.criticality }}"
               metric: "{{ event.payload.alert.metric }}"
               duration_minutes: "{{ event.payload.alert.duration_minutes }}"
