@@ -1,4 +1,4 @@
-SolarWinds Alert Classification Policy (LLM-Optimized) v1.0
+SolarWinds Alert Classification Policy (LLM-Optimized) v2.0
 
 SECTION 1: OBJECTIVE
 Classify each SolarWinds alert into a single category using consistent, evidence-based reasoning.
