@@ -15,6 +15,23 @@
     llm_api_token: "{{ lookup('env', 'LLM_API_TOKEN') | default(lookup('env', 'OPENAI_API_KEY') | default(lookup('env', 'API_KEY'), true), true) }}"
     llm_model: "{{ llm_model_name | default('granite-3-2-8b-instruct') }}"
 
+    # Alert fields — expected from EDA extra_vars. Defaults are empty so the
+    # assert below catches missing vars with a clear message instead of a
+    # cryptic "undefined variable" failure inside call_model.yml.
+    event_source: "{{ event_source | default('') }}"
+    alert_name: "{{ alert_name | default('') }}"
+    object_type: "{{ object_type | default('') }}"
+    environment: "{{ environment | default('') }}"
+    criticality: "{{ criticality | default('') }}"
+    metric: "{{ metric | default('') }}"
+    duration_minutes: "{{ duration_minutes | default(0) }}"
+    history: "{{ history | default('') }}"
+    maintenance_window: "{{ maintenance_window | default(false) }}"
+    corroboration: "{{ corroboration | default([]) }}"
+    related_alerts_count: "{{ related_alerts_count | default(0) }}"
+    time_of_day: "{{ time_of_day | default('') }}"
+    additional_context: "{{ additional_context | default('') }}"
+
   # Expose secrets as OS environment variables so that any script or command
   # task in this play (e.g. callmodel.py, cmdb_agent.py, Trigger_SW.py) can
   # read them via os.environ without extra plumbing.
@@ -42,6 +59,20 @@
         fail_msg: >
           vars/secrets.yml is missing or still contains placeholder values.
           Set llm_api_token and llm_api_endpoint before running this playbook.
+        quiet: true
+
+    - name: Assert required alert fields arrived from EDA extra_vars
+      ansible.builtin.assert:
+        that:
+          - alert_name | length > 0
+          - object_type | length > 0
+          - environment | length > 0
+          - criticality | length > 0
+          - metric | length > 0
+        fail_msg: >
+          One or more required alert fields are empty or missing.
+          Check that the EDA rulebook extra_vars are mapped correctly and that
+          the AAP job template has 'Prompt on launch' enabled for Extra Variables.
         quiet: true
 
   tasks:
