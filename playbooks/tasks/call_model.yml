@@ -125,12 +125,13 @@
   delay: 5
   until: _llm_raw_response.status is defined and _llm_raw_response.status == 200
 
-- name: Strip optional markdown fences from model output
+- name: Strip optional markdown fences and extract JSON object from model output
   ansible.builtin.set_fact:
     _model_output_text: >-
       {{ _llm_raw_response.json.choices[0].message.content
          | regex_replace('(?s)^```[^\n]*\n(.*\S)\n```$', '\1')
-         | trim }}
+         | trim
+         | regex_search('(?s)\{.*\}') }}
 
 - name: Parse classifier JSON response
   block:
