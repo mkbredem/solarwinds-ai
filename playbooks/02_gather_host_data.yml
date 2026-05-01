@@ -1,78 +1,114 @@
 ---
-# Gather diagnostics from the affected host before sending to RCA LLM.
-# Collects CPU, memory, disk, running services, and recent logs.
-# Output variables passed via set_stats to playbook 03_rca_analysis.yml
+# CMDB lookup + simulated host diagnostics for the affected server.
+# The CMDB lookup reads files/cmdb_input.json and matches on lookup_key == server_name.
+# Diagnostic commands run on localhost to mimic reaching the affected host
+# without requiring it to be in inventory.
+# Output: cmdb_record, host_diagnostics (set_stats → next workflow step)
 
-- name: Gather diagnostic data from affected host
-  hosts: "{{ target_host | default('all') }}"
+- name: Gather CMDB data and host diagnostics
+  hosts: localhost
   gather_facts: true
-  become: true
 
   vars:
+    server_name: "{{ server_name | default('') }}"
     log_lines: "{{ log_tail_lines | default(50) }}"
     top_process_count: "{{ top_n_processes | default(10) }}"
+    cmdb_file: "{{ playbook_dir }}/../files/cmdb_input.json"
+
+  pre_tasks:
+    - name: Assert server_name was provided
+      ansible.builtin.assert:
+        that:
+          - server_name | length > 0
+        fail_msg: "server_name extra_var is required but was not provided."
+        quiet: true
 
   tasks:
-    - name: Capture top CPU-consuming processes
+    - name: Load CMDB records from file
+      ansible.builtin.set_fact:
+        cmdb_data: "{{ lookup('file', cmdb_file) | from_json }}"
+
+    - name: Find CMDB record matching server_name
+      ansible.builtin.set_fact:
+        cmdb_record: "{{ cmdb_data | selectattr('lookup_key', 'equalto', server_name) | list | first | default({}) }}"
+
+    - name: Display CMDB lookup result
+      ansible.builtin.debug:
+        msg: >-
+          CMDB lookup for '{{ server_name }}':
+          {% if cmdb_record %}
+          FOUND — type: {{ cmdb_record.lookup_type | default('unknown') }},
+          environment: {{ cmdb_record.environment_hint | default('unknown') }},
+          context: {{ cmdb_record.additional_context | default({}) | to_json }}
+          {% else %}
+          No matching record found in CMDB.
+          {% endif %}
+
+    # --- Simulated host diagnostics (commands run on localhost as a proxy) ---
+
+    - name: Simulate — top CPU-consuming processes
       ansible.builtin.command:
-        cmd: "ps aux --sort=-%cpu | head -{{ top_process_count + 1 }}"
+        cmd: "ps aux --sort=-%cpu | head -{{ top_process_count | int + 1 }}"
       register: top_cpu_output
       changed_when: false
 
-    - name: Capture memory utilization
+    - name: Simulate — memory utilization
       ansible.builtin.command:
         cmd: free -h
       register: memory_output
       changed_when: false
 
-    - name: Capture disk utilization
+    - name: Simulate — disk utilization
       ansible.builtin.command:
         cmd: df -h
       register: disk_output
       changed_when: false
 
-    - name: Capture last {{ log_lines }} lines of syslog
+    - name: Simulate — recent syslog entries
       ansible.builtin.command:
         cmd: "journalctl -n {{ log_lines }} --no-pager -o short-iso"
       register: syslog_output
       changed_when: false
       ignore_errors: true
 
-    - name: Check status of key services
+    - name: Simulate — enumerate running services
       ansible.builtin.service_facts:
 
-    - name: Filter relevant service statuses
+    - name: Filter non-running services
       ansible.builtin.set_fact:
-        relevant_services: >-
+        non_running_services: >-
           {{
             ansible_facts.services | dict2items
             | selectattr('value.state', 'defined')
             | selectattr('value.state', '!=', 'running')
-            | list
+            | map(attribute='key') | list
           }}
 
-    - name: Build diagnostic summary
+    - name: Build host diagnostics summary
       ansible.builtin.set_fact:
         host_diagnostics:
-          hostname: "{{ inventory_hostname }}"
+          simulated_for: "{{ server_name }}"
+          collected_from: "localhost (simulated)"
           os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
           cpu_cores: "{{ ansible_processor_vcpus }}"
           top_processes: "{{ top_cpu_output.stdout }}"
           memory: "{{ memory_output.stdout }}"
           disk: "{{ disk_output.stdout }}"
           syslog_tail: "{{ syslog_output.stdout | default('unavailable') }}"
-          non_running_services: "{{ relevant_services | map(attribute='key') | list }}"
+          non_running_services: "{{ non_running_services }}"
           collected_at: "{{ ansible_date_time.iso8601 }}"
 
-    - name: Display collected diagnostics summary
+    - name: Display diagnostics summary
       ansible.builtin.debug:
         msg: >
-          Host: {{ host_diagnostics.hostname }} |
-          OS: {{ host_diagnostics.os }} |
+          Server: {{ host_diagnostics.simulated_for }} |
+          CMDB env: {{ cmdb_record.environment_hint | default('not found') }} |
+          App: {{ cmdb_record.additional_context.application | default('unknown') }} |
           Non-running services: {{ host_diagnostics.non_running_services | join(', ') or 'none' }}
 
-    - name: Pass diagnostics to next workflow step
+    - name: Pass CMDB record and diagnostics to next workflow step
       ansible.builtin.set_stats:
         data:
+          cmdb_record: "{{ cmdb_record }}"
           host_diagnostics: "{{ host_diagnostics }}"
         per_host: false

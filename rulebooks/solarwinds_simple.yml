@@ -32,6 +32,7 @@
               related_alerts_count: "{{ event.payload.alert.related_alerts_count }}"
               time_of_day: "{{ event.payload.alert.time_of_day }}"
               additional_context: "{{ event.payload.alert.additional_context }}"
+              server_name: "{{ event.payload.alert.server_name | default('') }}"
 
     - name: Notify ignored alert via Mattermost
       condition: >
@@ -67,3 +68,4 @@
               classifier_reason_codes: "{{ event.classifier_reason_codes }}"
               event_source: "{{ event.event_source }}"
               alert_name: "{{ event.alert_name }}"
+              server_name: "{{ event.server_name | default('') }}"
