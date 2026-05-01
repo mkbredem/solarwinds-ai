@@ -95,3 +95,5 @@
           classifier_confidence: "{{ classifier_result.confidence }}"
           classifier_reason_codes: "{{ classifier_result.reason_codes }}"
           classifier_explanation: "{{ classifier_result.explanation }}"
+          alert_name: "{{ alert_name }}"
+          event_source: "{{ event_source }}"

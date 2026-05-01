@@ -1,43 +1,9 @@
 """
-Streamlit UI: enter SolarWinds-style alert fields (same shape as callmodel_withUI.py),
+Streamlit UI: enter SolarWinds-style alert fields (same shape as callmodel.py),
 then POST the payload to an Ansible EDA external event stream webhook.
 
-Prerequisites
--------------
-- Python with ``streamlit`` and ``requests`` (``pip install streamlit requests``).
-- Optional: activate your venv, e.g. ``source .venv/bin/activate`` from the repo root.
-
-Option A — Streamlit UI (intended)
-----------------------------------
-From the **ktestproject** repo root::
-
-    cd /path/to/ktestproject
+Run:
     streamlit run EnergyTransfer/Trigger_SW.py
-
-The app opens in the browser. Use **Submit event** to POST JSON. **Server Name** is
-stored as ``server_name`` on the alert.
-
-Optional environment variables:
-
-- ``TRIGGER_SW_WEBHOOK_URL`` — overrides the default EDA external event stream URL
-  (see ``WEBHOOK_URL`` below).
-- ``TRIGGER_SW_AUTH`` — bearer token for the webhook (same as the UI "Authorization"
-  field; used for CLI demo too).
-
-Option B — CLI demo (no browser)
---------------------------------
-Without Streamlit, the script POSTs the default payload::
-
-    cd /path/to/ktestproject
-    python3 EnergyTransfer/Trigger_SW.py
-
-Uses ``TRIGGER_SW_AUTH`` if set. Use this to verify connectivity.
-
-Filename
---------
-This file is named ``Trigger_SW.py`` (capital ``T``). If ``streamlit run`` fails with
-"file not found," match that casing, or ``cd EnergyTransfer`` and run
-``streamlit run Trigger_SW.py``.
 """
 
 from __future__ import annotations
@@ -58,9 +24,8 @@ WEBHOOK_URL = os.environ.get(
     "7c41f7fb-2a4c-4b0f-ab85-fafed64c0c8a/post/",
 )
 
-# Defaults aligned with callmodel_withUI.py TEST_IGNORE_ALERT1
+# Defaults aligned with callmodel.py TEST_IGNORE_ALERT1
 DEFAULT_ALERT: dict[str, Any] = {
-    "server_name": "web-prd-az1-07.corp.example.com",
     "alert_name": "Node Down",
     "object_type": "app down",
     "environment": "qa",
@@ -116,7 +81,7 @@ def _run_streamlit_ui() -> None:
     st.markdown(_STREAMLIT_PANEL_BORDER_CSS, unsafe_allow_html=True)
     st.title("Trigger event to Ansible EDA (webhook)")
     st.caption(
-        "Right: same alert fields as `callmodel_withUI.py` (TEST_IGNORE_ALERT1). **Submit event** POSTs JSON to the EDA "
+        "Right: same alert fields as `callmodel.py` (TEST_IGNORE_ALERT1). **Submit event** POSTs JSON to the EDA "
         "external event stream. Left: envelope options and the last payload sent."
     )
     st.caption(f"Endpoint: `{WEBHOOK_URL}`")
@@ -147,11 +112,6 @@ def _run_streamlit_ui() -> None:
             col1, col2 = st.columns(2)
             with col1:
                 alert_name = st.text_input("alert_name", value=d["alert_name"])
-                server_name = st.text_input(
-                    "Server Name",
-                    value=str(d.get("server_name", "")),
-                    help="Server identifier (stored as server_name in the alert JSON): FQDN, hostname, IP, or CI name.",
-                )
                 object_type = st.text_input("object_type", value=d["object_type"])
                 environment = st.text_input("environment", value=d["environment"])
                 criticality = st.selectbox(
@@ -189,7 +149,6 @@ def _run_streamlit_ui() -> None:
     if submitted:
         corroboration = [x.strip() for x in corroboration_str.split(",") if x.strip()]
         alert: dict[str, Any] = {
-            "server_name": server_name.strip(),
             "alert_name": alert_name,
             "object_type": object_type,
             "environment": environment,

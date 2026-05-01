@@ -33,26 +33,36 @@
               time_of_day: "{{ event.payload.alert.time_of_day }}"
               additional_context: "{{ event.payload.alert.additional_context }}"
 
-    - name: Debug classifier result for actionable events
+    - name: Notify ignored alert via Mattermost
       condition: >
-        event.data.classification is defined and
-        event.data.classification != "ignore"
+        event.classification is defined and
+        event.classification == "ignore"
       action:
-        debug:
-          msg: |
-            === Classifier Result ===
-            {{ event.data | to_nice_yaml }}
-            === Original Alert ===
-            source:            {{ event.payload.source }}
-            alert_name:        {{ event.payload.alert.alert_name }}
-            object_type:       {{ event.payload.alert.object_type }}
-            environment:       {{ event.payload.alert.environment }}
-            criticality:       {{ event.payload.alert.criticality }}
-            metric:            {{ event.payload.alert.metric }}
-            duration_minutes:  {{ event.payload.alert.duration_minutes }}
-            history:           {{ event.payload.alert.history }}
-            maintenance_window: {{ event.payload.alert.maintenance_window }}
-            corroboration:     {{ event.payload.alert.corroboration }}
-            related_alerts_count: {{ event.payload.alert.related_alerts_count }}
-            time_of_day:       {{ event.payload.alert.time_of_day }}
-            additional_context: {{ event.payload.alert.additional_context }}
+        run_job_template:
+          name: "Notify Mattermost"
+          organization: "Infrastructure"
+          job_args:
+            extra_vars:
+              alert_title: "IGNORED: {{ event.alert_name }} | {{ event.event_source }}"
+              alert_issue_value: "Classification: {{ event.classification }} | Confidence: {{ event.classifier_confidence }}%"
+              alert_details_value: "{{ event.classifier_explanation }} | Recommended Action: {{ event.recommended_action }}"
+
+    - name: Launch triage workflow for actionable or needs-review alerts
+      condition: >
+        event.classification is defined and
+        (event.classification == "actionable_nonurgent" or
+         event.classification == "actionable_urgent" or
+         event.classification == "needs_review")
+      action:
+        run_workflow_template:
+          name: "SW AI - Alert Triage and Remediation"
+          organization: "Infrastructure"
+          job_args:
+            extra_vars:
+              classification: "{{ event.classification }}"
+              recommended_action: "{{ event.recommended_action }}"
+              classifier_confidence: "{{ event.classifier_confidence }}"
+              classifier_explanation: "{{ event.classifier_explanation }}"
+              classifier_reason_codes: "{{ event.classifier_reason_codes }}"
+              event_source: "{{ event.event_source }}"
+              alert_name: "{{ event.alert_name }}"
