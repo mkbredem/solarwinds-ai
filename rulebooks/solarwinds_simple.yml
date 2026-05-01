@@ -39,7 +39,7 @@
         event.classification == "ignore"
       action:
         run_job_template:
-          name: "Notify Mattermost"
+          name: "mbredeme - Notify Mattermost"
           organization: "Infrastructure"
           job_args:
             extra_vars:
