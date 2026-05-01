@@ -3,6 +3,9 @@
 # The CMDB lookup reads files/cmdb_input.json and matches on lookup_key == server_name.
 # Diagnostic commands run on localhost to mimic reaching the affected host
 # without requiring it to be in inventory.
+# All command tasks use ignore_errors: true and shell (for pipe support) since
+# tools like ps/free/journalctl may not exist in the execution environment.
+# ansible_facts provide reliable fallbacks for CPU/memory/disk.
 # Output: cmdb_record, host_diagnostics (set_stats → next workflow step)
 
 - name: Gather CMDB data and host diagnostics
@@ -10,7 +13,7 @@
   gather_facts: true
 
   vars:
-    server_name: "{{ server_name | default('') }}"
+    server_name: ""
     log_lines: "{{ log_tail_lines | default(50) }}"
     top_process_count: "{{ top_n_processes | default(10) }}"
     cmdb_file: "{{ playbook_dir }}/../files/cmdb_input.json"
@@ -45,27 +48,32 @@
           {% endif %}
 
     # --- Simulated host diagnostics (commands run on localhost as a proxy) ---
+    # ansible.builtin.shell is used so pipes are interpreted by the shell.
+    # ignore_errors: true on every task so missing binaries don't fail the play.
 
     - name: Simulate — top CPU-consuming processes
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: "ps aux --sort=-%cpu | head -{{ top_process_count | int + 1 }}"
       register: top_cpu_output
       changed_when: false
+      ignore_errors: true
 
     - name: Simulate — memory utilization
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: free -h
       register: memory_output
       changed_when: false
+      ignore_errors: true
 
     - name: Simulate — disk utilization
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: df -h
       register: disk_output
       changed_when: false
+      ignore_errors: true
 
     - name: Simulate — recent syslog entries
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: "journalctl -n {{ log_lines }} --no-pager -o short-iso"
       register: syslog_output
       changed_when: false
@@ -73,6 +81,7 @@
 
     - name: Simulate — enumerate running services
       ansible.builtin.service_facts:
+      ignore_errors: true
 
     - name: Filter non-running services
       ansible.builtin.set_fact:
@@ -83,6 +92,12 @@
             | selectattr('value.state', '!=', 'running')
             | map(attribute='key') | list
           }}
+      when: ansible_facts.services is defined
+
+    - name: Set empty non_running_services when service_facts unavailable
+      ansible.builtin.set_fact:
+        non_running_services: []
+      when: non_running_services is not defined
 
     - name: Build host diagnostics summary
       ansible.builtin.set_fact:
@@ -91,9 +106,10 @@
           collected_from: "localhost (simulated)"
           os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
           cpu_cores: "{{ ansible_processor_vcpus }}"
-          top_processes: "{{ top_cpu_output.stdout }}"
-          memory: "{{ memory_output.stdout }}"
-          disk: "{{ disk_output.stdout }}"
+          memory_total_mb: "{{ ansible_memtotal_mb }}"
+          top_processes: "{{ top_cpu_output.stdout | default('unavailable') }}"
+          memory: "{{ memory_output.stdout | default('unavailable') }}"
+          disk: "{{ disk_output.stdout | default('unavailable') }}"
           syslog_tail: "{{ syslog_output.stdout | default('unavailable') }}"
           non_running_services: "{{ non_running_services }}"
           collected_at: "{{ ansible_date_time.iso8601 }}"
@@ -104,6 +120,9 @@
           Server: {{ host_diagnostics.simulated_for }} |
           CMDB env: {{ cmdb_record.environment_hint | default('not found') }} |
           App: {{ cmdb_record.additional_context.application | default('unknown') }} |
+          OS: {{ host_diagnostics.os }} |
+          CPU cores: {{ host_diagnostics.cpu_cores }} |
+          Memory: {{ host_diagnostics.memory_total_mb }} MB |
           Non-running services: {{ host_diagnostics.non_running_services | join(', ') or 'none' }}
 
     - name: Pass CMDB record and diagnostics to next workflow step
