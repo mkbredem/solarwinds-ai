@@ -46,6 +46,7 @@
               alert_title: "IGNORED: {{ event.alert_name }} | {{ event.event_source }}"
               alert_issue_value: "Classification: {{ event.classification }} | Confidence: {{ event.classifier_confidence }}%"
               alert_details_value: "{{ event.classifier_explanation }} | Recommended Action: {{ event.recommended_action }}"
+              details: ""
 
     - name: Launch triage workflow for actionable or needs-review alerts
       condition: >
