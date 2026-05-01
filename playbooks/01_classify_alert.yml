@@ -31,7 +31,7 @@
     related_alerts_count: "{{ related_alerts_count | default(0) }}"
     time_of_day: "{{ time_of_day | default('') }}"
     additional_context: "{{ additional_context | default('') }}"
-    server_name: "{{ server_name | default('') }}"
+    server_name: ""
 
   # Expose secrets as OS environment variables so that any script or command
   # task in this play (e.g. callmodel.py, cmdb_agent.py, Trigger_SW.py) can

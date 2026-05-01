@@ -57,7 +57,7 @@
          event.classification == "needs_review")
       action:
         run_workflow_template:
-          name: "SW AI - Alert Triage and Remediation"
+          name: "mbredeme - SW AI Alert Triage and Remediation"
           organization: "Infrastructure"
           job_args:
             extra_vars:
