@@ -1,0 +1,47 @@
+---
+# Look up the affected server in the local CMDB file.
+# Matches on lookup_key == server_name from the SolarWinds payload.
+# Output: cmdb_record (set_stats → next workflow step)
+
+- name: Gather CMDB data for affected server
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    server_name: ""
+    cmdb_file: "{{ playbook_dir }}/../files/cmdb_input.json"
+
+  pre_tasks:
+    - name: Assert server_name was provided
+      ansible.builtin.assert:
+        that:
+          - server_name | length > 0
+        fail_msg: "server_name extra_var is required but was not provided."
+        quiet: true
+
+  tasks:
+    - name: Load CMDB records from file
+      ansible.builtin.set_fact:
+        cmdb_data: "{{ lookup('file', cmdb_file) | from_json }}"
+
+    - name: Find CMDB record matching server_name
+      ansible.builtin.set_fact:
+        cmdb_record: "{{ cmdb_data | selectattr('lookup_key', 'equalto', server_name) | list | first | default({}) }}"
+
+    - name: Display CMDB lookup result
+      ansible.builtin.debug:
+        msg: >-
+          CMDB lookup for '{{ server_name }}':
+          {% if cmdb_record %}
+          FOUND — type: {{ cmdb_record.lookup_type | default('unknown') }},
+          environment: {{ cmdb_record.environment_hint | default('unknown') }},
+          context: {{ cmdb_record.additional_context | default({}) | to_json }}
+          {% else %}
+          No matching record found in CMDB.
+          {% endif %}
+
+    - name: Pass CMDB record to next workflow step
+      ansible.builtin.set_stats:
+        data:
+          cmdb_record: "{{ cmdb_record }}"
+        per_host: false

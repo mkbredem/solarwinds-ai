@@ -1,0 +1,95 @@
+---
+# Simulate gathering diagnostic data from the affected host.
+# Commands run on localhost as a proxy since the host is not in inventory.
+# All commands use ansible.builtin.shell (pipe support) and ignore_errors: true
+# in case binaries are absent from the execution environment.
+# ansible_facts provide reliable fallbacks for OS, CPU, and memory.
+# Output: host_diagnostics (set_stats → next workflow step)
+
+- name: Gather simulated host diagnostics for affected server
+  hosts: localhost
+  gather_facts: true
+
+  vars:
+    server_name: ""
+    log_lines: "{{ log_tail_lines | default(50) }}"
+    top_process_count: "{{ top_n_processes | default(10) }}"
+
+  tasks:
+    - name: Simulate — top CPU-consuming processes
+      ansible.builtin.shell:
+        cmd: "ps aux --sort=-%cpu | head -{{ top_process_count | int + 1 }}"
+      register: top_cpu_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Simulate — memory utilization
+      ansible.builtin.shell:
+        cmd: free -h
+      register: memory_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Simulate — disk utilization
+      ansible.builtin.shell:
+        cmd: df -h
+      register: disk_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Simulate — recent syslog entries
+      ansible.builtin.shell:
+        cmd: "journalctl -n {{ log_lines }} --no-pager -o short-iso"
+      register: syslog_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Simulate — enumerate running services
+      ansible.builtin.service_facts:
+      ignore_errors: true
+
+    - name: Filter non-running services
+      ansible.builtin.set_fact:
+        non_running_services: >-
+          {{
+            ansible_facts.services | dict2items
+            | selectattr('value.state', 'defined')
+            | selectattr('value.state', '!=', 'running')
+            | map(attribute='key') | list
+          }}
+      when: ansible_facts.services is defined
+
+    - name: Set empty non_running_services when service_facts unavailable
+      ansible.builtin.set_fact:
+        non_running_services: []
+      when: non_running_services is not defined
+
+    - name: Build host diagnostics summary
+      ansible.builtin.set_fact:
+        host_diagnostics:
+          simulated_for: "{{ server_name }}"
+          collected_from: "localhost (simulated)"
+          os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+          cpu_cores: "{{ ansible_processor_vcpus }}"
+          memory_total_mb: "{{ ansible_memtotal_mb }}"
+          top_processes: "{{ top_cpu_output.stdout | default('unavailable') }}"
+          memory: "{{ memory_output.stdout | default('unavailable') }}"
+          disk: "{{ disk_output.stdout | default('unavailable') }}"
+          syslog_tail: "{{ syslog_output.stdout | default('unavailable') }}"
+          non_running_services: "{{ non_running_services }}"
+          collected_at: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Display diagnostics summary
+      ansible.builtin.debug:
+        msg: >
+          Server: {{ host_diagnostics.simulated_for }} |
+          OS: {{ host_diagnostics.os }} |
+          CPU cores: {{ host_diagnostics.cpu_cores }} |
+          Memory: {{ host_diagnostics.memory_total_mb }} MB |
+          Non-running services: {{ host_diagnostics.non_running_services | join(', ') or 'none' }}
+
+    - name: Pass host diagnostics to next workflow step
+      ansible.builtin.set_stats:
+        data:
+          host_diagnostics: "{{ host_diagnostics }}"
+        per_host: false

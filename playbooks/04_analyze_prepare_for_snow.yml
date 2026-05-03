@@ -1,0 +1,106 @@
+---
+# Combines CMDB and host diagnostic data from previous workflow steps,
+# maps classification to ServiceNow urgency/impact, and builds the
+# incident description. Passes all required variables via set_stats
+# to the job template that calls the servicenow_ticket role.
+#
+# Priority mapping:
+#   actionable_urgent    → urgency: 1 / impact: 1 (High)
+#   needs_review         → urgency: 2 / impact: 2 (Medium)
+#   actionable_nonurgent → urgency: 3 / impact: 3 (Low)
+
+- name: Analyze and prepare ServiceNow incident variables
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    # Classifier fields — arrive via set_stats from 01_classify_alert
+    classification: ""
+    alert_name: ""
+    event_source: ""
+    server_name: ""
+    classifier_explanation: ""
+    classifier_reason_codes: []
+    classifier_confidence: ""
+    recommended_action: ""
+
+    # CMDB and host data — arrive via set_stats from 02 and 03
+    cmdb_record: {}
+    host_diagnostics: {}
+
+    _priority_map:
+      actionable_urgent:
+        urgency: "1"
+        impact: "1"
+        label: "High"
+      needs_review:
+        urgency: "2"
+        impact: "2"
+        label: "Medium"
+      actionable_nonurgent:
+        urgency: "3"
+        impact: "3"
+        label: "Low"
+
+  tasks:
+    - name: Resolve urgency and impact from classification
+      ansible.builtin.set_fact:
+        _priority: "{{ _priority_map[classification] | default({'urgency': '2', 'impact': '2', 'label': 'Medium'}) }}"
+
+    - name: Build short incident description
+      ansible.builtin.set_fact:
+        incident_description: >-
+          {{ alert_name }} on {{ server_name }} — {{ classification | upper }} ({{ event_source }})
+
+    - name: Build long ServiceNow description
+      ansible.builtin.set_fact:
+        sn_description: |
+          === AI Classification ===
+          Classification : {{ classification }} ({{ _priority.label }} priority)
+          Confidence     : {{ classifier_confidence }}%
+          Reason codes   : {{ classifier_reason_codes | join(', ') }}
+          Explanation    : {{ classifier_explanation }}
+          Recommended    : {{ recommended_action }}
+
+          === CMDB Record ===
+          {% if cmdb_record %}
+          Lookup type  : {{ cmdb_record.lookup_type | default('unknown') }}
+          Environment  : {{ cmdb_record.environment_hint | default('unknown') }}
+          FQDN         : {{ cmdb_record.additional_context.fqdn | default(server_name) }}
+          IP Address   : {{ cmdb_record.additional_context.ip_address | default('unknown') }}
+          Application  : {{ cmdb_record.additional_context.application | default('unknown') }}
+          Region       : {{ cmdb_record.additional_context.region | default('unknown') }}
+          {% else %}
+          No CMDB record found for {{ server_name }}.
+          {% endif %}
+
+          === Host Diagnostics ===
+          {% if host_diagnostics %}
+          OS                  : {{ host_diagnostics.os | default('unknown') }}
+          CPU cores           : {{ host_diagnostics.cpu_cores | default('unknown') }}
+          Memory (MB)         : {{ host_diagnostics.memory_total_mb | default('unknown') }}
+          Non-running services: {{ host_diagnostics.non_running_services | default([]) | join(', ') or 'none' }}
+          Collected at        : {{ host_diagnostics.collected_at | default('unknown') }}
+          {% else %}
+          Host diagnostic data not available.
+          {% endif %}
+
+    - name: Display incident preparation summary
+      ansible.builtin.debug:
+        msg: >
+          Incident: {{ incident_description }} |
+          Priority: {{ _priority.label }} |
+          Urgency: {{ _priority.urgency }} | Impact: {{ _priority.impact }} |
+          IP: {{ cmdb_record.additional_context.ip_address | default('unknown') }}
+
+    - name: Pass ServiceNow variables to ticket creation step
+      ansible.builtin.set_stats:
+        data:
+          incident_description: "{{ incident_description }}"
+          sn_description: "{{ sn_description }}"
+          sn_urgency: "{{ _priority.urgency }}"
+          sn_impact: "{{ _priority.impact }}"
+          vm_name: "{{ server_name }}"
+          os: "{{ host_diagnostics.os | default('') }}"
+          ip_addr: "{{ cmdb_record.additional_context.ip_address | default('') }}"
+        per_host: false
