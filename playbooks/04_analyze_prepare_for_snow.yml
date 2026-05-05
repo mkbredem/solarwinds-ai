@@ -100,7 +100,7 @@
           sn_description: "{{ sn_description }}"
           sn_urgency: "{{ _priority.urgency }}"
           sn_impact: "{{ _priority.impact }}"
-          vm_name: localhost
+          vm_name: "{{ cmdb_record.additional_context.fqdn | default(server_name) }}"
           os: "{{ host_diagnostics.os | default('') }}"
           ip_addr: "{{ cmdb_record.additional_context.ip_address | default('') }}"
         per_host: false
