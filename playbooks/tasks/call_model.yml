@@ -125,7 +125,7 @@
   delay: 5
   until: _llm_raw_response.status is defined and _llm_raw_response.status == 200
 
-- name: Strip optional markdown fences and extract JSON object from model output
+- name: Extract JSON from model response
   ansible.builtin.set_fact:
     _model_output_text: >-
       {{ _llm_raw_response.json.choices[0].message.content
